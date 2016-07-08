@@ -1,0 +1,26 @@
+--- # A test playbook for SecureMe concerning mainly the Debian distributions
+# Control Section
+- hosts: Remote
+  user: test
+  sudo: yes
+  connection: ssh
+  gather_facts: yes
+  vars_prompt:
+   - name: "pass"
+     prompt: "Enter password"
+     private: yes
+     confirm: yes
+     salt_size: 7
+   - name: "DirToScan"
+     prompt: "Please add the dir/file to scan"
+     default: "/home/test/WAOUHMEHost/Audit"
+     private: no
+# Tasks to perform on the servers
+  pre_tasks:
+   - shell: echo 'Hello, lets secure our ubuntu servers'
+  roles:
+   - { role: SecureMe }
+  tasks:
+   - shell: echo 'Still running'
+  post_tasks:
+   - shell: echo 'We are done and secure, Goodbye'

@@ -1,0 +1,48 @@
+--- 
+LogwatchEmail: nihel.msilini@gmail.com
+SecRequiredPackages:
+   - ufw
+   - fail2ban
+   - unattended-upgrades
+   - logwatch
+ServerRequiredPackages:
+   - vim
+   - acl
+   - ntp
+   - wget
+   - curl
+   - git
+   - unzip
+   - htop
+   - tmux
+   - rpm
+   - anacron
+   - zip
+   - nmap
+RequiredUtilities:
+   - binutils
+   - libreadline5
+   - ruby
+   - ssl-cert
+   - unhide.rb
+MailPackages:
+   - apache2-utils
+   - mutt
+   - mailutils
+   - sendmail-bin
+SELinuxPkgDebian:
+   - selinux-basics
+   - selinux-policy-default
+   - policycoreutils
+DependPackages:
+   - openssh-server
+   - openssh-client
+   - python-apt
+   - aptitude
+   - python-pip
+   - python-simplejson
+# SELinux policy (targeted / mls)
+selinux_policy: targeted
+# SELinux mode (enforcing / permissive / disabled) to label file system in a fresh boot
+selinux_state: permissive
+

@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Nihel Msilini
+  description: Security purposes
+  license: MIT
+  company: Human Craft - WAOUHME
+  min_ansible_version: 2.1
+  platforms:
+  - name: Debian
+    versions:
+    - all
+  categories:
+  - system
+  - security
+

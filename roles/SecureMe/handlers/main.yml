@@ -1,0 +1,18 @@
+---
+- name: restart ssh
+  service: name=ssh state=restarted
+- name: Start NTP
+  service: name=ntp state=started enabled=yes
+- name: Restart Unattended Upgrades
+  service: name=unattended-upgrades state=restarted
+- name: auditdstart
+  service: name=auditd state=started
+- name: auditdrestart
+  service: name=auditd state=restarted
+- name: Start Fail2Ban
+  service: name=fail2ban state=started
+- name: Restart Fail2Ban
+  service: name=fail2ban state=restarted
+- name: restart ufw
+  service: name=ufw state=restarted
+

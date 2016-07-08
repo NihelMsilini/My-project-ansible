@@ -1,0 +1,243 @@
+---
+# Update the system and configure automatic security updates to enhance security
+- name: Make sure that the system for is up to date
+  apt: update_cache=yes autoremove=yes upgrade=safe cache_valid_time=3600
+- name: PKG debian-keyring is at the latest version
+  apt: pkg=debian-keyring state=latest
+- name: Adjust APT update intervals
+  copy: src=/home/test/SecureMeAnsible/roles/SecureMe/files/apt_periodic dest=/etc/apt/apt.conf.d/10periodic
+- name: Add Unattended Upgrade configuration
+  copy: src=/home/test/SecureMeAnsible/roles/SecureMe/files/50unattended-upgrades dest=/etc/apt/apt.conf.d/50unattended-upgrades
+  notify:
+     - Restart Unattended Upgrades
+# Install Requiered Packages on the system
+- name: Ensure build dependencies are installed
+  apt: 'name="{{ item }}" state=installed'
+  with_items: DependPackages
+- name: Install required packages for security reasons
+  apt: state=installed pkg={{ item }}
+  with_items: SecRequiredPackages
+- name: Install the most required packages in an ubuntu server
+  apt: state=installed pkg={{ item }}
+  with_items: ServerRequiredPackages
+  notify:
+     - Start NTP
+- name: Install the ubuntu utilities
+  apt: state=installed pkg={{ item }}
+  with_items: RequiredUtilities
+- name: Install mailing packages
+  apt: state=installed pkg={{ item }}
+  with_items: MailPackages
+- name: Install passlib for encryption needs
+  pip: name=passlib state=latest
+- name: Get EPEL (Extra Packages for Enterprise Linux), a based repository project from Fedora team
+  get_url: url=https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm dest=/home/test
+- name: Install it using RPM to enable the EPEL repository
+  raw: rpm -Uvh epel-release-latest-7.noarch.rpm
+  register: command_result
+  failed_when: "'FAILED' in command_result.stderr"
+# Secure the SSH server, update its configuration to be more secure
+- name: Disallow root SSH access
+  lineinfile: dest=/etc/ssh/sshd_config regexp="^PermitRootLogin" line="PermitRootLogin no" state=present
+  notify:
+     - restart ssh
+- name: Disallow password authentication since the access based on the key exchange is thought to be more secure
+  lineinfile: dest=/etc/ssh/sshd_config regexp="^PasswordAuthentication" line="PasswordAuthentication no" state=present
+  notify:
+     - restart ssh
+- name: Disable remote ssh server's reverse dns lookup procedure to gain time and prevent DNS vulnerability
+  lineinfile: dest=/etc/ssh/sshd_config line="UseDNS no"
+  notify:
+     - restart ssh
+# SELinux is a mandatory access control security mechanism implemented in the kernelw, below the SELinux policy install and configurations
+- name: Install SELinux dependencies
+  apt: name={{ item }} state=present
+  with_items: SELinuxPkgDebian
+# Configure SELinux in a permissive mode
+- name: Configure SELinux in a permissive mode for both distributions
+  selinux: policy="{{selinux_policy}}" state="{{selinux_state}}"
+- name: Configure GRUB and PAM and create /.autorelabel to label file system in Debian for the next system boot
+  shell: selinux-activate
+- name: Create the working directory on the hosts
+  file: path=/home/test/WAOUHMEHost state=directory mode=0755 owner=test group=test
+- name: Create an audit directory in the host /Audit to get all the security reports
+  file: path=/home/test/WAOUHMEHost/Audit state=directory mode=0755 owner=test group=test
+# Linux Auditd Daemon is a framework to allow auditing events on a Linux system
+- name: Install Auditd tool in order to control the system
+  apt: name={{ item }} state=latest
+  with_items:
+    - auditd
+    - audispd-plugins
+- name: Start Auditd Daemon
+  service: name=auditd state=started enabled=yes
+  notify: auditdstart
+# File auditing while setting specific rules for both systems
+- name: Configure rules and security policy in the /etc/audit/audit.rules
+  copy: src=/home/test/SecureMeAnsible/roles/SecureMe/files/Rules.txt dest=/etc/audit/audit.rules
+- name: Start Auditd Daemon to load the new configuration
+  service: name=auditd state=restarted enabled=yes
+  notify: auditdrestart
+- name: Launch a script that creates an overall security reports( Audit logs, summarily failure auth logs )
+  script: /home/test/SecureMeAnsible/roles/SecureMe/files/Report.sh
+# Shared memory can be used in an attack against a running service
+- name: Secure shared memory
+  lineinfile: dest=/etc/fstab line="tmpfs     /run/shm     tmpfs     defaults,noexec,nosuid     0     0"
+# Secure the system against the most common attacks, BruteForce/DDOS/IP Spoofing/Rootkit/Malwares/Viruses/Warms/Trojans
+# 1. Brute Force(obtain user's pwd/PIN)
+# 2. DDOS attacks(make an online service unavailable by overwhelming it with traffic from multiple sources)
+- name: Copy jail.conf to a local config file jail.local
+  command: cp jail.conf jail.local
+  args:
+    creates: /etc/fail2ban/jail.local
+    chdir: /etc/fail2ban/
+# Configure Fail2ban destmail and configure it manually to send me an email notification when it bans an IP with the banned address(action=%(action_mwl)s)
+- name: Configure fail2ban to detect itruders address, and come against ddos
+  template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/jail.local.j2 dest=/etc/fail2ban/jail.local owner=test group=test mode=0644
+- name: Restart Fail2ban to charge the new configuration, Make sure to manually configure ssh against DDOS, activate the ssh-ddos jail
+  service: name=fail2ban state=restarted
+  notify:
+     - Restart Fail2Ban
+- name: Check the auditd rules, its status and the status of fail2ban configured jails
+  script: /home/test/SecureMeAnsible/roles/SecureMe/files/Status.sh
+# 3. Rkhunter is a tool that scans backdoors, rootkits and local exploits on a system, it scans hidden files, wrong permissions set on binaries, suspicious strings in kernel
+- name: Install RkHunter, CHKrootKit and Lynis(auditing tools) and ClamAV(antivirus engine designed for detecting Trojans, Viruses, Malwares...)
+  apt: name={{ item }} state=latest update_cache=yes
+  with_items:
+     - rkhunter
+     - chkrootkit
+     - lynis
+     - clamav
+     - clamav-daemon
+# RKHunter file configuration
+- name: Make sure that the RKHunter file properties database is updated after each remove or install of a package
+  shell: rkhunter --propupd; rkhunter --update
+  sudo: yes
+- name: Configure rkhunter
+  template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/rkhunter.conf.j2 dest=/etc/rkhunter.conf owner=test group=test mode=0644
+# CHKrootKit checks your server for suspicious rootkit processes and checks for a list of known rootkit files
+- name: Run CHKRootKit to verify which of the executable system files were modified
+  shell: chkrootkit -q >> /home/test/WAOUHMEHost/Audit/chkrootkit.{{ansible_date_time["date"]}}.log
+# Integrity Control with Lynis, it performs a detailed auditing of many security aspects and configurations of a system
+- name: Trigger a fine scan on the host machine, it performs more extensive security scans than vulnerability scanners
+  shell: lynis --check-all -Q > /home/test/WAOUHMEHost/Audit/LynisScan.{{ansible_date_time["date"]}}.log
+# 4. Prevent IP spoofing and Prevent source routing of incoming packets and log malformed IP's
+- name: Prevent IP spoofing
+  action: lineinfile dest=/etc/host.conf regexp="^order" line="order bind,hosts" state=present
+- name: Enable the nospoof argument
+  action: lineinfile dest=/etc/host.conf regexp="^nospoof" line="nospoof on" state=present
+- name: IP spoofing attempts will log a message to the syslog facility
+  action: lineinfile dest=/etc/host.conf regexp="^nospoof" line="nospoof on" state=present
+- name: Harden network with sysctl settings
+  template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/sysctl.conf.j2 dest=/etc/sysctl.conf owner=test group=test mode=0644
+- name: Reload sysctl with the latest changes
+  shell: sysctl -p
+# Directories and folder scanning with an open source Anti-virus ClamAV
+- name: ClamAV scanning for a specific directory or a file set beforehand with the admin
+  shell: clamscan -ri {{DirToScan}}
+  register: AVScan
+- debug: var=AVScan
+# Display the network state of the server, add c when using the command line to get it continued
+- name: Network server state
+  shell: netstat -nputw
+  register: state
+- debug: var=state
+- name: System control login/time/current action/users
+  shell: w
+  register: sys
+- debug: var=sys
+- name: Open port consulting on the local machine
+  shell: nmap -F -n -sS 127.0.0.1
+  register: port
+- debug: var=port
+# Memory and disk statics
+- name: Display the memory and the disk statics and save them in a daily report sent via mail every day within a cron job
+  script: /home/test/SecureMeAnsible/roles/SecureMe/files/MemStat.sh > /home/test/WAOUHMEHost/Audit/MemStat.{{ansible_date_time["date"]}}.log
+# Manage firewall with UFW in order to restrict access to the local machine with certain rules
+# UFW firewall configuration and  setting rules
+- name : Enable UFW and close all ports and incoming trafic
+  ufw: state=enabled policy=deny logging=on direction=incoming
+- name : Enable UFW and open all outgoing trafic
+  ufw: state=enabled policy=allow logging=on direction=outgoing
+- name: Configure banned address from the before.rules confuguration file
+  template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/before.rules.j2 dest=/etc/ufw/before.rules owner=test group=test mode=0644
+# To prevent the ignorance of the denial rule add it to before.rules under the # End required lines# line
+- name : Allow all access to tcp port 80, 443, 21 and 22
+  ufw: rule=allow port={{ item }} proto=tcp state=reloaded
+  with_items: [80, 443, 22, 21 ]
+- name: Allow mosh udp traffic to resume SSH connections
+  ufw: rule=allow proto=udp port=60000:60010
+- name: Allow mosh tcp traffic to resume SSH connections
+  ufw: rule=allow proto=tcp port=60000:60010
+- name: Allow all access from RFC1918 networks to this host
+  ufw: rule=allow src={{ item }}
+  with_items:
+     - 10.0.0.0/8
+     - 172.16.0.0/12
+     - 192.168.0.0/16
+- name: Display UFW status and rules
+  shell: ufw status verbose
+  register: ufwstat
+- debug: var=ufwstat
+- name: Display the dropped addresses
+  shell: iptables -L -n | grep DROP
+  register: drop
+- debug: var=drop
+- name: Ensure ufw starts on a fresh reboot
+  service: name=ufw state=started enabled=yes
+ # Configure logwatch to send a daily summary email
+- name: Set up Postfix to relay mail
+  debconf: name=postfix
+           question='{{item.question}}'
+           value='{{item.value}}'
+           vtype='{{item.vtype}}'
+  with_items:
+     - { question: 'postfix/mailname', value: '{{ ansible_fqdn }}', vtype: 'string' }
+     - { question: 'postfix/main_mailer_type', value: 'Internet Site', vtype: 'string' }
+# Schedule a cron job to send the log summary
+- name: Email log summary daily
+  lineinfile: dest=/etc/cron.daily/00logwatch
+              regexp="^/usr/sbin/logwatch"
+              line="/usr/sbin/logwatch --mailto {{ LogwatchEmail }} --detail high"
+              state=present
+# Configure a cron job to send the daily security created reports in a zip folder
+- name: Archive the /Audit files in order to send them via mail notification in the end of the day
+  shell: tar zcvf SecAudit.tgz Audit
+  args:
+    chdir: /home/test/WAOUHMEHost/
+  ignore_errors: yes
+- name: Send generated security reports for traceability
+  cron:
+    user: test
+    name: "Security Report"
+    minute: "30"
+    hour: "16"
+    job: "echo 'Generated Security Reports' | mutt -a '/home/test/WAOUHMEHost/SecAudit.tgz' -s 'Security Reports' -- nihel.msilini@gmail.com"
+- name: Run CHKrootkit every afternoon at 17h30 and send an email report
+  cron:
+    user: test
+    name: "CHKrootkit Report"
+    hour: "16"
+    minute: "30"
+    job: "sudo chkrootkit 2>&1 | mail -s 'CHKrootkit output of my server' nihel.msilini@gmail.com"
+- name: Run Lynis every afternoon at 17h30 and send an email report
+  cron:
+    user: test
+    name: "Lynis Report"
+    hour: "16"
+    minute: "30"
+    job: "sudo lynis --check-all -Q 2>&1 | mail -s 'Lynis output of my server' nihel.msilini@gmail.com "
+- name: Run a scan using RKHunter every afternoon at 17h30 and send an email report
+  cron:
+    user: test
+    name: "RKHunter Report"
+    hour: "16"
+    minute: "30"
+    job: "sudo rkhunter --check --skip-keypress 2>&1 | mail -s 'RKHunter output of my server' nihel.msilini@gmail.com"
+- name: Run a ClamAV scan on a specific directory or file to look for any viruses, every afternoon at 17h30 and send an email report
+  cron:
+    user: test
+    name: " ClamAV Report"
+    hour: "16"
+    minute: "30"
+    job: "sudo clamscan -ri {{DirToScan}} 2>&1 | mail -s ' ClamAV output of my server' nihel.msilini@gmail.com"
+
