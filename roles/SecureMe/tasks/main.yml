@@ -1,8 +1,8 @@
 ---
 # Update the system and configure automatic security updates to enhance security
-- name: Make sure that the system for is up to date
+- name: Make sure that the system is up to date
   apt: update_cache=yes autoremove=yes upgrade=safe cache_valid_time=3600
-- name: PKG debian-keyring is at the latest version
+- name: Make sure thet the PKG debian-keyring is at the latest version
   apt: pkg=debian-keyring state=latest
 - name: Adjust APT update intervals
   copy: src=/home/test/SecureMeAnsible/roles/SecureMe/files/apt_periodic dest=/etc/apt/apt.conf.d/10periodic
@@ -41,10 +41,10 @@
   lineinfile: dest=/etc/ssh/sshd_config regexp="^PermitRootLogin" line="PermitRootLogin no" state=present
   notify:
      - restart ssh
-- name: Disallow password authentication since the access based on the key exchange is thought to be more secure
-  lineinfile: dest=/etc/ssh/sshd_config regexp="^PasswordAuthentication" line="PasswordAuthentication no" state=present
-  notify:
-     - restart ssh
+#- name: Disallow password authentication since the access based on the key exchange is thought to be more secure, PS: will be used for future aims
+#  lineinfile: dest=/etc/ssh/sshd_config regexp="^PasswordAuthentication" line="PasswordAuthentication no" state=present
+#  notify:
+#     - restart ssh
 - name: Disable remote ssh server's reverse dns lookup procedure to gain time and prevent DNS vulnerability
   lineinfile: dest=/etc/ssh/sshd_config line="UseDNS no"
   notify:
@@ -54,15 +54,15 @@
   apt: name={{ item }} state=present
   with_items: SELinuxPkgDebian
 # Configure SELinux in a permissive mode
-- name: Configure SELinux in a permissive mode for both distributions
+- name: Configure SELinux in a permissive mode
   selinux: policy="{{selinux_policy}}" state="{{selinux_state}}"
-- name: Configure GRUB and PAM and create /.autorelabel to label file system in Debian for the next system boot
+- name: Configure GRUB, PAM and create /.autorelabel to label file systems on the next system boot
   shell: selinux-activate
 - name: Create the working directory on the hosts
   file: path=/home/test/WAOUHMEHost state=directory mode=0755 owner=test group=test
-- name: Create an audit directory in the host /Audit to get all the security reports
+- name: Create an audit directory in the host /Audit to host all the generated security reports
   file: path=/home/test/WAOUHMEHost/Audit state=directory mode=0755 owner=test group=test
-# Linux Auditd Daemon is a framework to allow auditing events on a Linux system
+# Linux Auditd Daemon is a framework to allow auditing events
 - name: Install Auditd tool in order to control the system
   apt: name={{ item }} state=latest
   with_items:
@@ -71,7 +71,7 @@
 - name: Start Auditd Daemon
   service: name=auditd state=started enabled=yes
   notify: auditdstart
-# File auditing while setting specific rules for both systems
+# File auditing based on a customized set of rules
 - name: Configure rules and security policy in the /etc/audit/audit.rules
   copy: src=/home/test/SecureMeAnsible/roles/SecureMe/files/Rules.txt dest=/etc/audit/audit.rules
 - name: Start Auditd Daemon to load the new configuration
@@ -79,27 +79,27 @@
   notify: auditdrestart
 - name: Launch a script that creates an overall security reports( Audit logs, summarily failure auth logs )
   script: /home/test/SecureMeAnsible/roles/SecureMe/files/Report.sh
-# Shared memory can be used in an attack against a running service
+# Secure the system against the most common attacks, BruteForce/DDOS/IP Spoofing/Rootkit/Malwares/Viruses/Warms/Trojans
+# 1. Shared memory can be used in an attack against a running service
 - name: Secure shared memory
   lineinfile: dest=/etc/fstab line="tmpfs     /run/shm     tmpfs     defaults,noexec,nosuid     0     0"
-# Secure the system against the most common attacks, BruteForce/DDOS/IP Spoofing/Rootkit/Malwares/Viruses/Warms/Trojans
-# 1. Brute Force(obtain user's pwd/PIN)
-# 2. DDOS attacks(make an online service unavailable by overwhelming it with traffic from multiple sources)
+# 2. Brute Force(obtain user's pwd/PIN)
+# 3. DDOS attacks(make an online service unavailable by overwhelming it with traffic from multiple sources)
 - name: Copy jail.conf to a local config file jail.local
   command: cp jail.conf jail.local
   args:
     creates: /etc/fail2ban/jail.local
     chdir: /etc/fail2ban/
-# Configure Fail2ban destmail and configure it manually to send me an email notification when it bans an IP with the banned address(action=%(action_mwl)s)
-- name: Configure fail2ban to detect itruders address, and come against ddos
+# Configure Fail2ban destmail to send an email notification when it bans an IP with the banned address
+- name: Configure fail2ban to detect itruders address, stop ddos and Brute Force attacks
   template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/jail.local.j2 dest=/etc/fail2ban/jail.local owner=test group=test mode=0644
-- name: Restart Fail2ban to charge the new configuration, Make sure to manually configure ssh against DDOS, activate the ssh-ddos jail
+- name: Restart Fail2ban to charge the new configuration and activate the sshd jail
   service: name=fail2ban state=restarted
   notify:
      - Restart Fail2Ban
 - name: Check the auditd rules, its status and the status of fail2ban configured jails
   script: /home/test/SecureMeAnsible/roles/SecureMe/files/Status.sh
-# 3. Rkhunter is a tool that scans backdoors, rootkits and local exploits on a system, it scans hidden files, wrong permissions set on binaries, suspicious strings in kernel
+# 4. Rkhunter is a tool that scans backdoors, rootkits and local exploits on a system, it scans hidden files, wrong permissions set on binaries, suspicious strings in kernel
 - name: Install RkHunter, CHKrootKit and Lynis(auditing tools) and ClamAV(antivirus engine designed for detecting Trojans, Viruses, Malwares...)
   apt: name={{ item }} state=latest update_cache=yes
   with_items:
@@ -109,25 +109,27 @@
      - clamav
      - clamav-daemon
 # RKHunter file configuration
-- name: Make sure that the RKHunter file properties database is updated after each remove or install of a package
-  shell: rkhunter --propupd; rkhunter --update
-  sudo: yes
 - name: Configure rkhunter
   template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/rkhunter.conf.j2 dest=/etc/rkhunter.conf owner=test group=test mode=0644
+- name: Make sure that the RKHunter file properties database is updated after each remove or install of a package
+  shell: rkhunter --update; rkhunter --propupd
+- name: Report warnings only and log them in a report file in the Audit directory
+  shell: rkhunter --checkall --report-warnings-only > /home/test/WAOUHMEHost/Audit/RKHunterWarnings.{{ansible_date_time["date"]}}.log
 # CHKrootKit checks your server for suspicious rootkit processes and checks for a list of known rootkit files
 - name: Run CHKRootKit to verify which of the executable system files were modified
-  shell: chkrootkit -q >> /home/test/WAOUHMEHost/Audit/chkrootkit.{{ansible_date_time["date"]}}.log
+  shell: chkrootkit >> /home/test/WAOUHMEHost/Audit/CHKrootKit.{{ansible_date_time["date"]}}.log
 # Integrity Control with Lynis, it performs a detailed auditing of many security aspects and configurations of a system
 - name: Trigger a fine scan on the host machine, it performs more extensive security scans than vulnerability scanners
-  shell: lynis --check-all -Q > /home/test/WAOUHMEHost/Audit/LynisScan.{{ansible_date_time["date"]}}.log
-# 4. Prevent IP spoofing and Prevent source routing of incoming packets and log malformed IP's
+  shell: lynis --check-all > /home/test/WAOUHMEHost/Audit/LynisScan.{{ansible_date_time["date"]}}.log
+# 5. Prevent IP spoofing and prevent source routing of incoming packets and log malformed IP's
 - name: Prevent IP spoofing
   action: lineinfile dest=/etc/host.conf regexp="^order" line="order bind,hosts" state=present
 - name: Enable the nospoof argument
   action: lineinfile dest=/etc/host.conf regexp="^nospoof" line="nospoof on" state=present
-- name: IP spoofing attempts will log a message to the syslog facility
-  action: lineinfile dest=/etc/host.conf regexp="^nospoof" line="nospoof on" state=present
 # Directories and folder scanning with an open source Anti-virus ClamAV
+- name: Update the database of viruses
+  shell: freshclam
+  sudo: yes
 - name: ClamAV scanning for a specific directory or a file set beforehand with the admin
   shell: clamscan -ri {{DirToScan}}
   register: AVScan
@@ -149,17 +151,15 @@
 - name: Display the memory and the disk statics and save them in a daily report sent via mail every day within a cron job
   script: /home/test/SecureMeAnsible/roles/SecureMe/files/MemStat.sh > /home/test/WAOUHMEHost/Audit/MemStat.{{ansible_date_time["date"]}}.log
 # Manage firewall with UFW in order to restrict access to the local machine with certain rules
-# UFW firewall configuration and  setting rules
+# UFW firewall configuration and setting rules
 - name : Enable UFW and close all ports and incoming trafic
   ufw: state=enabled policy=deny logging=on direction=incoming
 - name : Enable UFW and open all outgoing trafic
   ufw: state=enabled policy=allow logging=on direction=outgoing
-- name: Configure banned address from the before.rules confuguration file
-  template: src=/home/test/SecureMeAnsible/roles/SecureMe/templates/before.rules.j2 dest=/etc/ufw/before.rules owner=test group=test mode=0644
 # To prevent the ignorance of the denial rule add it to before.rules under the # End required lines# line
-- name : Allow all access to tcp port 80, 443, 21 and 22
+- name : Allow all access to tcp port 80, 443, 21, 23 and 22
   ufw: rule=allow port={{ item }} proto=tcp state=reloaded
-  with_items: [80, 443, 22, 21 ]
+  with_items: [80, 443, 22, 21, 23, 9997, 9998, 8125, 8092, 8094, 85, 8080, 25, 587, 82, 83]
 - name: Allow mosh udp traffic to resume SSH connections
   ufw: rule=allow proto=udp port=60000:60010
 - name: Allow mosh tcp traffic to resume SSH connections
@@ -180,7 +180,7 @@
 - debug: var=drop
 - name: Ensure ufw starts on a fresh reboot
   service: name=ufw state=started enabled=yes
- # Configure logwatch to send a daily summary email
+# Configure logwatch to send a daily summary email
 - name: Set up Postfix to relay mail
   debconf: name=postfix
            question='{{item.question}}'

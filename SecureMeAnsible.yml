@@ -1,6 +1,6 @@
 --- # A test playbook for SecureMe concerning mainly the Debian distributions
 # Control Section
-- hosts: Remote
+- hosts: remote
   user: test
   sudo: yes
   connection: ssh

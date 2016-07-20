@@ -19,6 +19,7 @@ ServerRequiredPackages:
    - anacron
    - zip
    - nmap
+   - aptitude
 RequiredUtilities:
    - binutils
    - libreadline5
